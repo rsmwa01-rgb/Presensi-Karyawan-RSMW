@@ -1,2 +1,419 @@
-# Presensi-Karyawan-RSMW
-Presensi demo untuk karyawan
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Absensi Wajah Mobile AI</title>
+    <!-- Library Face-API.js -->
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 10px;
+            overscroll-behavior: none;
+        }
+
+        h1 { font-size: 1.5rem; margin: 10px 0; color: #2c3e50; text-align: center; }
+        .clock { font-size: 1rem; color: #7f8c8d; margin-bottom: 15px; }
+
+        /* LOADING SCREEN */
+        #status-loading {
+            background: #fff3cd;
+            color: #856404;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #ffeeba;
+            text-align: center;
+            width: 90%;
+            margin-bottom: 20px;
+        }
+
+        /* TOMBOL MULAI */
+        #start-section { text-align: center; width: 100%; margin-top: 20px; }
+        .btn-large-start {
+            background: linear-gradient(135deg, #27ae60, #2ecc71);
+            color: white;
+            padding: 15px 40px;
+            font-size: 1.2rem;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(46, 204, 113, 0.4);
+            display: none; /* Sembunyi sampai AI siap */
+            width: 80%;
+            max-width: 300px;
+        }
+
+        /* KAMERA WRAPPER */
+        #camera-section {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .camera-container {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            /* Aspect ratio 3:4 for mobile feel */
+            aspect-ratio: 3/4; 
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Agar full layar di container */
+            transform: scaleX(-1); /* Mirror effect untuk kamera depan */
+        }
+        
+        /* Jika kamera belakang, hilangkan mirror */
+        video.rear-camera { transform: scaleX(1); }
+
+        canvas { position: absolute; top: 0; left: 0; }
+
+        /* TOMBOL KONTROL KAMERA */
+        .cam-controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .btn-flip, .btn-stop {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: bold;
+            cursor: pointer;
+            flex: 1;
+        }
+        .btn-flip { background-color: #3498db; }
+        .btn-stop { background-color: #e74c3c; }
+
+        /* INPUT FORM & TABEL */
+        .controls {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            width: 100%;
+            max-width: 600px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-top: 20px;
+            box-sizing: border-box;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+
+        .btn-action {
+            width: 100%;
+            padding: 12px;
+            background-color: #2c3e50;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+        }
+
+        table { width: 100%; margin-top: 15px; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
+        th { background-color: #f8f9fa; color: #333; }
+        
+        /* Responsive adjustments */
+        @media (max-width: 480px) {
+            h1 { font-size: 1.2rem; }
+            .btn-large-start { font-size: 1rem; padding: 12px 30px; }
+        }
+    </style>
+</head>
+<body>
+
+<h1>📷 Absensi Mobile AI</h1>
+<div class="clock" id="clock">Memuat waktu...</div>
+
+<div id="status-loading">⏳ Menyiapkan AI... Mohon tunggu...</div>
+
+<!-- Tombol Start -->
+<div id="start-section">
+    <button id="btnStart" class="btn-large-start" onclick="openCamera()">▶️ Mulai Absensi</button>
+</div>
+
+<!-- Area Kamera -->
+<div id="camera-section">
+    <div class="camera-container">
+        <!-- Playsinline & webkit-playsinline PENTING untuk iPhone -->
+        <video id="video" autoplay muted playsinline webkit-playsinline></video>
+    </div>
+
+    <div class="cam-controls">
+        <button class="btn-flip" onclick="switchCameraMode()">🔄 Putar Kamera</button>
+        <button class="btn-stop" onclick="stopCamera()">❌ Tutup</button>
+    </div>
+</div>
+
+<!-- Form & Data -->
+<div class="controls">
+    <h3>📝 Registrasi & Log</h3>
+    
+    <!-- Tab sederhana -->
+    <details open style="margin-bottom: 15px; border-bottom: 1px solid #eee; padding-bottom: 10px;">
+        <summary style="font-weight:bold; cursor:pointer;">Daftarkan Wajah Baru</summary>
+        <div style="margin-top: 10px;">
+            <input type="text" id="regName" placeholder="Nama Lengkap">
+            <input type="file" id="regPhoto" accept="image/*">
+            <button class="btn-action" id="btnRegister" onclick="registerFace()">Simpan Wajah</button>
+            <div id="regStatus" style="margin-top:5px; color:#27ae60; font-weight:bold;"></div>
+        </div>
+    </details>
+
+    <h4>Kehadiran Hari Ini:</h4>
+    <table id="attendanceTable">
+        <thead>
+            <tr><th>Waktu</th><th>Nama</th></tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    <button class="btn-action" onclick="downloadCSV()" style="margin-top:15px; background-color:#27ae60;">📥 Download Excel</button>
+</div>
+
+<script>
+    const video = document.getElementById('video');
+    const statusLoading = document.getElementById('status-loading');
+    const btnStart = document.getElementById('btnStart');
+    const cameraSection = document.getElementById('camera-section');
+    const regStatus = document.getElementById('regStatus');
+    
+    let labeledFaceDescriptors = []; 
+    let faceMatcher; 
+    let attendanceData = []; 
+    let currentStream; 
+    let detectionInterval; 
+    
+    // Default Mode Kamera: user (Depan) atau environment (Belakang)
+    let currentFacingMode = 'user'; 
+
+    // 1. JAM DIGITAL
+    setInterval(() => {
+        const now = new Date();
+        document.getElementById('clock').innerText = now.toLocaleDateString('id-ID', { 
+            weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' 
+        });
+    }, 1000);
+
+    // 2. LOAD MODEL AI
+    Promise.all([
+        faceapi.nets.ssdMobilenetv1.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models'),
+        faceapi.nets.faceLandmark68Net.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models'),
+        faceapi.nets.faceRecognitionNet.loadFromUri('https://justadudewhohacks.github.io/face-api.js/models')
+    ]).then(() => {
+        statusLoading.innerText = "✅ Sistem Siap. Pastikan cahaya cukup.";
+        statusLoading.style.background = "#d4edda";
+        statusLoading.style.color = "#155724";
+        btnStart.style.display = "inline-block";
+    }).catch(err => alert("Gagal memuat AI. Periksa koneksi internet."));
+
+    // 3. FUNGSI BUKA KAMERA
+    async function openCamera() {
+        btnStart.style.display = "none";
+        statusLoading.style.display = "none";
+        cameraSection.style.display = "flex";
+        await startVideo();
+    }
+
+    // 4. LOGIKA KAMERA (MOBILE FRIENDLY)
+    async function startVideo() {
+        // Hentikan stream lama jika ada
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+
+        // Konfigurasi Constraints Khusus Mobile
+        const constraints = {
+            video: {
+                facingMode: currentFacingMode, // 'user' atau 'environment'
+                width: { ideal: 640 }, // Ideal resolution for mobile performance
+                height: { ideal: 480 }
+            },
+            audio: false
+        };
+
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            currentStream = stream;
+            video.srcObject = stream;
+
+            // Atur efek mirror (Kamera depan = mirror, Belakang = normal)
+            if (currentFacingMode === 'environment') {
+                video.classList.add('rear-camera');
+            } else {
+                video.classList.remove('rear-camera');
+            }
+
+        } catch (err) {
+            console.error("Camera Error:", err);
+            alert("Gagal membuka kamera. Pastikan izin diberikan dan menggunakan HTTPS.");
+            stopCamera();
+        }
+    }
+
+    // 5. TOMBOL FLIP CAMERA
+    function switchCameraMode() {
+        // Toggle antara depan dan belakang
+        currentFacingMode = (currentFacingMode === 'user') ? 'environment' : 'user';
+        startVideo();
+    }
+
+    function stopCamera() {
+        if (currentStream) {
+            currentStream.getTracks().forEach(track => track.stop());
+        }
+        if (detectionInterval) clearInterval(detectionInterval);
+        
+        const container = document.querySelector('.camera-container');
+        const oldCanvas = container.querySelector('canvas');
+        if (oldCanvas) oldCanvas.remove();
+
+        cameraSection.style.display = "none";
+        btnStart.style.display = "inline-block";
+    }
+
+    // 6. DETEKSI AI
+    video.addEventListener('loadedmetadata', () => { // Gunakan loadedmetadata agar ukuran video valid
+        
+        const container = document.querySelector('.camera-container');
+        const oldCanvas = container.querySelector('canvas');
+        if (oldCanvas) oldCanvas.remove();
+
+        const canvas = faceapi.createCanvasFromMedia(video);
+        container.append(canvas);
+
+        const displaySize = { width: video.videoWidth, height: video.videoHeight };
+        faceapi.matchDimensions(canvas, displaySize);
+
+        if (detectionInterval) clearInterval(detectionInterval);
+
+        detectionInterval = setInterval(async () => {
+            // Re-check size (Penting untuk HP saat rotasi layar)
+            const displaySize = { width: video.videoWidth, height: video.videoHeight };
+            if (displaySize.width === 0) return;
+            
+            faceapi.matchDimensions(canvas, displaySize);
+
+            if (!faceMatcher) return;
+
+            // Deteksi wajah
+            const detections = await faceapi.detectAllFaces(video).withFaceLandmarks().withFaceDescriptors();
+            const resizedDetections = faceapi.resizeResults(detections, displaySize);
+            
+            canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+
+            const results = resizedDetections.map(d => faceMatcher.findBestMatch(d.descriptor));
+
+            results.forEach((result, i) => {
+                const box = resizedDetections[i].detection.box;
+                const { label, distance } = result;
+                
+                let color = '#e74c3c'; // Merah
+                let text = 'Unknown';
+
+                if (label !== 'unknown') {
+                    color = '#2ecc71'; // Hijau
+                    text = label; // Simpelkan teks di HP
+                    recordAttendance(label);
+                }
+                
+                // Gambar kotak (Sesuaikan mirror jika kamera depan)
+                // Note: face-api menggambar berdasarkan koordinat video asli
+                const drawBox = new faceapi.draw.DrawBox(box, { label: text, boxColor: color });
+                drawBox.draw(canvas);
+            });
+        }, 100); // Interval agak lambat (100ms) biar HP kentang gak panas
+    });
+
+    // 7. REGISTRASI & DATA
+    async function registerFace() {
+        const name = document.getElementById('regName').value;
+        const photoInput = document.getElementById('regPhoto').files[0];
+
+        if (!name || !photoInput) { alert("Isi nama & foto!"); return; }
+
+        regStatus.innerText = "⏳ Proses...";
+        document.getElementById('btnRegister').disabled = true;
+
+        try {
+            const img = await faceapi.bufferToImage(photoInput);
+            const detections = await faceapi.detectSingleFace(img).withFaceLandmarks().withFaceDescriptor();
+
+            if (!detections) {
+                alert("Wajah tidak jelas. Gunakan foto selfie close-up.");
+                regStatus.innerText = "❌ Gagal.";
+            } else {
+                const newDescriptor = new faceapi.LabeledFaceDescriptors(name, [detections.descriptor]);
+                labeledFaceDescriptors.push(newDescriptor);
+                faceMatcher = new faceapi.FaceMatcher(labeledFaceDescriptors, 0.6);
+                
+                regStatus.innerText = `✅ ${name} Disimpan!`;
+                document.getElementById('regName').value = "";
+                document.getElementById('regPhoto').value = "";
+            }
+        } catch (error) {
+            console.error(error);
+            alert("Gagal memproses gambar.");
+        }
+        document.getElementById('btnRegister').disabled = false;
+    }
+
+    function recordAttendance(name) {
+        const alreadyPresent = attendanceData.find(d => d.name === name);
+        if (alreadyPresent) return;
+
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('id-ID');
+
+        attendanceData.push({ name: name, time: timeString });
+        
+        const tbody = document.querySelector('#attendanceTable tbody');
+        const row = `<tr><td>${timeString}</td><td><strong>${name}</strong></td></tr>`;
+        tbody.innerHTML = row + tbody.innerHTML;
+        
+        speak(`Halo ${name}`);
+    }
+
+    function speak(text) {
+        if ('speechSynthesis' in window) {
+            const msg = new SpeechSynthesisUtterance(text);
+            msg.lang = 'id-ID'; window.speechSynthesis.speak(msg);
+        }
+    }
+
+    function downloadCSV() {
+        let csv = "Waktu,Nama\n";
+        attendanceData.forEach(row => csv += `${row.time},${row.name}\n`);
+        const link = document.createElement('a');
+        link.href = 'data:text/csv;charset=utf-8,' + encodeURI(csv);
+        link.download = 'Absensi_Mobile.csv';
+        link.click();
+    }
+</script>
+
+</body>
+</html>
